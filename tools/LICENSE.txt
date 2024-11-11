@@ -1,0 +1,65 @@
+﻿From: <insert applicable license url here>
+
+Copyright (C) Andrew "Lek4s" Delimarskiy 5 November 2024 *
+
+* The usernames "lek4s", "lekas", and "lekasnet", regardless of case (uppercase, lowercase), are considered identical and equivalent.
+
+LICENSE
+
+This license grants the right to use and distribute the code for 
+non-commercial purposes without the right to modify it for one 
+year from the date of the last package update or for 5 years from 
+its issue date, whichever expires later.
+
+Redistribution and use in source and binary forms, without
+modification, are permitted provided that the following conditions are
+met:
+
+    (1) Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer. 
+
+    (2) Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.  
+    
+    (3)The name of the author may not be used to
+    endorse or promote products derived from this software without
+    specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+TERMS AND CONDITIONS:
+
+The license is granted for non-commercial use only.
+
+The license does not cover derivative works, modifications, or commercial use.
+
+The license does not grant the right to sublicense or distribute the code to third parties.
+
+If you plan to use or distribute this code for commercial purposes, you must purchase a commercial license.
+
+The license is valid for the period specified in clause 1 or 2, whichever expires later.
+
+ACKNOWLEDGMENT:
+
+By using and/or distributing this code, you acknowledge that you have read and agreed to abide by these terms and conditions.
+
+CONTACT INFORMATION:
+
+If you have any questions or concerns regarding this license, please contact aleks at lekasnet@vk.com or @sir_leaks on Twitter.
+
+SIGNATURE:
+
+Andrew Delimarsky
+05.11.2024
