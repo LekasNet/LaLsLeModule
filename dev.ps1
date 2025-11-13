@@ -1,4 +1,4 @@
-# dev.ps1 — перезагрузка dev-версии la из текущей папки
+﻿# dev.ps1 — перезагрузка dev-версии la из текущей папки
 
 # Путь к этому скрипту
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path

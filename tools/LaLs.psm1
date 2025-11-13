@@ -1,4 +1,4 @@
-function la {
+﻿function la {
     [CmdletBinding()]
     param (
         # Базовые флаги
