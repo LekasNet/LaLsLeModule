@@ -1,16 +1,663 @@
 function la {
+    [CmdletBinding()]
     param (
-        [switch]$a,
-        [switch]$l,
-        [switch]$i,
-        [switch]$d,
-        [switch]$f,
-        [switch]$m,
-        [switch]$info,
-        [switch]$structure,
-	[switch]$git
+        # Базовые флаги
+        [switch]$a,          # show all (hidden)
+        [switch]$l,          # list (one per line)
+        [switch]$i,          # info-table (date / size)
+        [switch]$d,          # only directories
+        [switch]$f,          # only files
+        [switch]$m,          # modes (attributes)
+        [switch]$info,       # help
+        [Alias('v')]
+        [switch]$Version,    # version info
+        [Alias('structure')]
+        [switch]$tree,       # tree view
+        [switch]$git,        # git status
+
+        # Новые фичи
+        [ValidateSet('name','size','time','extension','length')]
+        [string]$Sort = 'name',
+        [switch]$Reverse,
+
+        # Управление иконками
+        [switch]$Icons,              # включить иконки только для этого вызова
+        [string]$UseIconsPreference  # сохранить настройку в реестр: true/false/1/0/on/off
     )
 
+    # ==========================
+    # ВНУТРЕННИЕ ХЕЛПЕРЫ
+    # ==========================
+
+    function Get-LaLang {
+        $candidates = @()
+
+        if ($PSUICulture) { $candidates += $PSUICulture }
+        if ($PSCulture)   { $candidates += $PSCulture }
+
+        try {
+            $ui = Get-UICulture
+            if ($ui) { $candidates += $ui.Name }
+        } catch {}
+
+        try {
+            $c = Get-Culture
+            if ($c) { $candidates += $c.Name }
+        } catch {}
+
+        if ($env:LC_ALL) { $candidates += $env:LC_ALL }
+        if ($env:LANG)   { $candidates += $env:LANG }
+
+        foreach ($cand in $candidates) {
+            if (-not $cand) { continue }
+            $lang2 = $cand.Substring(0,2).ToLowerInvariant()
+            switch ($lang2) {
+                'ru' { return 'ru' }
+                'en' { return 'en' }
+                'de' { return 'de' }
+            }
+        }
+
+        return 'en'
+    }
+
+    function Show-Help {
+        param([string]$Lang)
+
+        switch ($Lang) {
+            'ru' {
+                Write-Host "la — расширенный ls для PowerShell" -ForegroundColor Yellow
+                Write-Host ""
+
+                Write-Host "Базовые флаги:" -ForegroundColor Cyan
+                Write-Host "  -a           Показывать все файлы, включая скрытые." -ForegroundColor Green
+                Write-Host "  -l           Вывод по одному элементу в строке (long view)." -ForegroundColor Green
+                Write-Host "  -i           Табличный вывод: имя, дата изменения, размер (человекочитаемый)." -ForegroundColor Green
+                Write-Host "  -d           Только директории." -ForegroundColor Green
+                Write-Host "  -f           Только файлы." -ForegroundColor Green
+                Write-Host "  -m           Таблица атрибутов (ReadOnly, Hidden, System, Archive)." -ForegroundColor Green
+                Write-Host "  -Version,-v  Показать локальную версию и версию пакета на Chocolatey." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Расширенный функционал:" -ForegroundColor Cyan
+                Write-Host "  -tree        Дерево текущей директории (с иконками). Алиас: -structure" -ForegroundColor Green
+                Write-Host "  -git         Git статус (короткий формат, раскрашенный по статусу)." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Иконки:" -ForegroundColor Cyan
+                Write-Host "  -Icons                   Включить иконки только для этого вызова." -ForegroundColor Green
+                Write-Host "  -UseIconsPreference true/false  Записать настройку в реестр (HKCU:\Software\LaLs)." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Сортировки:" -ForegroundColor Cyan
+                Write-Host "  -Sort name       Сортировать по имени (по умолчанию)." -ForegroundColor Green
+                Write-Host "  -Sort size       Сортировать по размеру." -ForegroundColor Green
+                Write-Host "  -Sort time       Сортировать по времени изменения." -ForegroundColor Green
+                Write-Host "  -Sort extension  Сортировать по расширению." -ForegroundColor Green
+                Write-Host "  -Sort length     Сортировать по длине имени." -ForegroundColor Green
+                Write-Host "  -Reverse         Реверсировать порядок сортировки." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Примеры:" -ForegroundColor Cyan
+                Write-Host "  la                          # базовый цветной список" -ForegroundColor White
+                Write-Host "  la -a                       # показать скрытые" -ForegroundColor White
+                Write-Host "  la -i                       # таблица: имя + дата + размер" -ForegroundColor White
+                Write-Host "  la -d -Sort name            # только директории, по имени" -ForegroundColor White
+                Write-Host "  la -f -Sort size -Reverse   # файлы по размеру по убыванию" -ForegroundColor White
+                Write-Host "  la -tree                    # дерево текущей папки" -ForegroundColor White
+                Write-Host "  la -git                     # git статус" -ForegroundColor White
+                Write-Host "  la -Icons                   # добавить иконки только сейчас" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference true   # включить иконки навсегда" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference false  # отключить иконки навсегда" -ForegroundColor White
+            }
+
+            'en' {
+                Write-Host "la — advanced ls-like command for PowerShell" -ForegroundColor Yellow
+                Write-Host ""
+
+                Write-Host "Basic flags:" -ForegroundColor Cyan
+                Write-Host "  -a           Show hidden files." -ForegroundColor Green
+                Write-Host "  -l           One item per line (long view)." -ForegroundColor Green
+                Write-Host "  -i           Table view: name, modified date, human-readable size." -ForegroundColor Green
+                Write-Host "  -d           Directories only." -ForegroundColor Green
+                Write-Host "  -f           Files only." -ForegroundColor Green
+                Write-Host "  -m           Attribute table (ReadOnly, Hidden, System, Archive)." -ForegroundColor Green
+                Write-Host "  -Version,-v  Show local version of LaLs and package current version in choco" -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Extended features:" -ForegroundColor Cyan
+                Write-Host "  -tree        Directory tree (with icons). Alias: -structure" -ForegroundColor Green
+                Write-Host "  -git         Git status (short, colored by status)." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Icons:" -ForegroundColor Cyan
+                Write-Host "  -Icons                   Enable icons for this call only." -ForegroundColor Green
+                Write-Host "  -UseIconsPreference true/false  Persist icons setting in registry (HKCU:\Software\LaLs)." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Sorting:" -ForegroundColor Cyan
+                Write-Host "  -Sort name       Sort by name (default)." -ForegroundColor Green
+                Write-Host "  -Sort size       Sort by size." -ForegroundColor Green
+                Write-Host "  -Sort time       Sort by modification time." -ForegroundColor Green
+                Write-Host "  -Sort extension  Sort by extension." -ForegroundColor Green
+                Write-Host "  -Sort length     Sort by name length." -ForegroundColor Green
+                Write-Host "  -Reverse         Reverse sorting order." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Examples:" -ForegroundColor Cyan
+                Write-Host "  la                          # basic colored list" -ForegroundColor White
+                Write-Host "  la -a                       # show hidden" -ForegroundColor White
+                Write-Host "  la -i                       # table: name + date + size" -ForegroundColor White
+                Write-Host "  la -d -Sort name            # directories only, sorted by name" -ForegroundColor White
+                Write-Host "  la -f -Sort size -Reverse   # files sorted by size, descending" -ForegroundColor White
+                Write-Host "  la -tree                    # tree of current directory" -ForegroundColor White
+                Write-Host "  la -git                     # git status" -ForegroundColor White
+                Write-Host "  la -Icons                   # enable icons for this run" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference true   # turn icons on permanently" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference false  # turn icons off permanently" -ForegroundColor White
+            }
+
+            'de' {
+                Write-Host "la — erweiterter ls-ähnlicher Befehl für PowerShell" -ForegroundColor Yellow
+                Write-Host ""
+
+                Write-Host "Basis-Flags:" -ForegroundColor Cyan
+                Write-Host "  -a           Versteckte Dateien anzeigen." -ForegroundColor Green
+                Write-Host "  -l           Ein Element pro Zeile (Long View)." -ForegroundColor Green
+                Write-Host "  -i           Tabellenansicht: Name, Datum, Größe (lesbar)." -ForegroundColor Green
+                Write-Host "  -d           Nur Verzeichnisse." -ForegroundColor Green
+                Write-Host "  -f           Nur Dateien." -ForegroundColor Green
+                Write-Host "  -m           Attribut-Tabelle (ReadOnly, Hidden, System, Archive)." -ForegroundColor Green
+                Write-Host "  -Version,-v  Zeigt die lokale Version und die Paketversion auf Chocolatey an." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Erweiterte Funktionen:" -ForegroundColor Cyan
+                Write-Host "  -tree        Verzeichnisbaum (mit Icons). Alias: -structure" -ForegroundColor Green
+                Write-Host "  -git         Git-Status (kurz, farbig nach Status)." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Icons:" -ForegroundColor Cyan
+                Write-Host "  -Icons                   Icons nur für diesen Aufruf aktivieren." -ForegroundColor Green
+                Write-Host "  -UseIconsPreference true/false  Einstellung dauerhaft in der Registry speichern (HKCU:\Software\LaLs)." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Sortierung:" -ForegroundColor Cyan
+                Write-Host "  -Sort name       Nach Name sortieren (Standard)." -ForegroundColor Green
+                Write-Host "  -Sort size       Nach Größe sortieren." -ForegroundColor Green
+                Write-Host "  -Sort time       Nach Änderungsdatum sortieren." -ForegroundColor Green
+                Write-Host "  -Sort extension  Nach Erweiterung sortieren." -ForegroundColor Green
+                Write-Host "  -Sort length     Nach Namenslänge sortieren." -ForegroundColor Green
+                Write-Host "  -Reverse         Reihenfolge umkehren." -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "Beispiele:" -ForegroundColor Cyan
+                Write-Host "  la                          # Standardliste mit Farben" -ForegroundColor White
+                Write-Host "  la -a                       # versteckte Dateien anzeigen" -ForegroundColor White
+                Write-Host "  la -i                       # Tabelle: Name + Datum + Größe" -ForegroundColor White
+                Write-Host "  la -d -Sort name            # nur Verzeichnisse, nach Name sortiert" -ForegroundColor White
+                Write-Host "  la -f -Sort size -Reverse   # Dateien nach Größe absteigend" -ForegroundColor White
+                Write-Host "  la -tree                    # Verzeichnisbaum" -ForegroundColor White
+                Write-Host "  la -git                     # Git-Status" -ForegroundColor White
+                Write-Host "  la -Icons                   # Icons nur für diesen Aufruf" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference true # Icons dauerhaft aktivieren" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference false# Icons dauerhaft deaktivieren" -ForegroundColor White
+            }
+
+            default {
+                Show-Help -Lang 'en'
+            }
+        }
+    }
+
+    function Get-LaIconsConfig {
+        $path = 'HKCU:\Software\LaLs'
+        $useIcons = $true  # дефолт: иконки включены
+
+        if (Test-Path $path) {
+            try {
+                $props = Get-ItemProperty -Path $path -Name 'UseIcons' -ErrorAction SilentlyContinue
+                if ($null -ne $props.UseIcons) {
+                    $useIcons = [bool]$props.UseIcons
+                }
+            } catch {}
+        }
+
+        return $useIcons
+    }
+
+    function Set-LaIconsConfig {
+        param([bool]$Value)
+
+        $path = 'HKCU:\Software\LaLs'
+        if (-not (Test-Path $path)) {
+            New-Item -Path $path -Force | Out-Null
+        }
+        New-ItemProperty -Path $path -Name 'UseIcons' -Value ([int]$Value) -PropertyType DWord -Force | Out-Null
+    }
+
+    function Get-ItemIcon {
+        param(
+            [Parameter(Mandatory)]
+            [System.IO.FileSystemInfo]$Item,
+            [bool]$UseIcons
+        )
+
+        if (-not $UseIcons) {
+            return ""
+        }
+
+        if ($Item.PSIsContainer) {
+            return "📁"
+        }
+
+        switch -Regex ($Item.Extension.ToLower()) {
+            '\.psm1|\.ps1'                 { return "⚙️" }
+            '\.psd1'                       { return "📦" }
+            '\.nupkg|\.zip|\.7z|\.rar'     { return "📦" }
+            '\.txt|\.log'                  { return "📝" }
+            '\.md'                         { return "📓" }
+            '\.png|\.jpg|\.jpeg|\.gif|\.svg|\.webp' { return "🖼️" }
+            '\.json|\.xml|\.yml|\.yaml'    { return "📄" }
+            '\.exe|\.bat|\.cmd'            { return "🚀" }
+            default                        { return "📄" }
+        }
+    }
+
+    function Write-ItemName {
+        param(
+            [Parameter(Mandatory)]
+            [System.IO.FileSystemInfo]$Item,
+            [System.ConsoleColor]$DirColor,
+            [System.ConsoleColor]$FileColor,
+            [System.ConsoleColor]$HiddenColor,
+            [bool]$UseIcons,
+            [switch]$Long
+        )
+
+        if ($Item.Attributes -band [IO.FileAttributes]::Hidden) {
+            $color = $HiddenColor
+        }
+        elseif ($Item.PSIsContainer) {
+            $color = $DirColor
+        }
+        else {
+            $color = $FileColor
+        }
+
+        $icon = Get-ItemIcon -Item $Item -UseIcons:$UseIcons
+        $text = if ($UseIcons -and $icon) { "$icon $($Item.Name)" } else { $Item.Name }
+
+        if ($Long) {
+            Write-Host $text -ForegroundColor $color
+        }
+        else {
+            Write-Host -NoNewline "$text   " -ForegroundColor $color
+        }
+    }
+
+    function Show-Modes {
+        param(
+            [System.IO.FileSystemInfo[]]$Items,
+            [System.ConsoleColor]$DirColor,
+            [System.ConsoleColor]$FileColor,
+            [System.ConsoleColor]$HiddenColor,
+            [bool]$UseIcons
+        )
+
+        $nameWidth = 40
+        $modeWidth = 30
+
+        Write-Host ("Name".PadRight($nameWidth) + "Mode".PadRight($modeWidth)) -ForegroundColor White
+        Write-Host ("-" * ($nameWidth + $modeWidth)) -ForegroundColor White
+
+        foreach ($item in $Items) {
+            if ($item.Attributes -band [IO.FileAttributes]::Hidden) {
+                $color = $HiddenColor
+            }
+            elseif ($item.PSIsContainer) {
+                $color = $DirColor
+            }
+            else {
+                $color = $FileColor
+            }
+
+            $icon = Get-ItemIcon -Item $item -UseIcons:$UseIcons
+            $nameText = if ($UseIcons -and $icon) { "$icon $($item.Name)" } else { $item.Name }
+            $name = $nameText.PadRight($nameWidth)
+
+            $modeParts = @()
+
+            if ($item.Attributes -band [IO.FileAttributes]::ReadOnly) { $modeParts += "Read-Only" }
+            else { $modeParts += "Read/Write" }
+
+            if ($item.Attributes -band [IO.FileAttributes]::Directory) { $modeParts += "Directory" }
+            if ($item.Attributes -band [IO.FileAttributes]::Archive)   { $modeParts += "Archive" }
+            if ($item.Attributes -band [IO.FileAttributes]::System)    { $modeParts += "System" }
+            if ($item.Attributes -band [IO.FileAttributes]::Hidden)    { $modeParts += "Hidden" }
+
+            $mode = ($modeParts -join ", ")
+
+            Write-Host ($name + $mode) -ForegroundColor $color
+        }
+    }
+
+    function Format-SizeHuman {
+        param(
+            [long]$Bytes
+        )
+
+        if ($Bytes -lt 1KB) { return "$Bytes B" }
+        elseif ($Bytes -lt 1MB) { return ("{0:N2} KB" -f ($Bytes / 1KB)) }
+        elseif ($Bytes -lt 1GB) { return ("{0:N2} MB" -f ($Bytes / 1MB)) }
+        elseif ($Bytes -lt 1TB) { return ("{0:N2} GB" -f ($Bytes / 1GB)) }
+        else { return ("{0:N2} TB" -f ($Bytes / 1TB)) }
+    }
+
+    function Show-InfoTable {
+        param(
+            [System.IO.FileSystemInfo[]]$Items,
+            [System.ConsoleColor]$DirColor,
+            [System.ConsoleColor]$FileColor,
+            [System.ConsoleColor]$HiddenColor,
+            [bool]$UseIcons
+        )
+
+        $nameWidth = 40
+        $dateWidth = 20
+        $sizeWidth = 14
+
+        Write-Host ("Name".PadRight($nameWidth) + "Modified".PadRight($dateWidth) + "Size".PadLeft($sizeWidth)) -ForegroundColor White
+        Write-Host ("-" * ($nameWidth + $dateWidth + $sizeWidth)) -ForegroundColor White
+
+        foreach ($item in $Items) {
+            if ($item.Attributes -band [IO.FileAttributes]::Hidden) {
+                $color = $HiddenColor
+            }
+            elseif ($item.PSIsContainer) {
+                $color = $DirColor
+            }
+            else {
+                $color = $FileColor
+            }
+
+            $icon = Get-ItemIcon -Item $item -UseIcons:$UseIcons
+            $nameText = if ($UseIcons -and $icon) { "$icon $($item.Name)" } else { $item.Name }
+            $name         = $nameText.PadRight($nameWidth)
+            $modDate      = $item.LastWriteTime.ToString("yyyy-MM-dd HH:mm").PadRight($dateWidth)
+            $size =
+                if ($item.PSIsContainer) {
+                    "-"
+                }
+                else {
+                    Format-SizeHuman -Bytes $item.Length
+                }
+
+            $size = $size.PadLeft($sizeWidth)
+
+            Write-Host ("$name$modDate$size") -ForegroundColor $color
+        }
+    }
+
+    function Show-TreeInternal {
+        param(
+            [string]$Path,
+            [string]$Prefix,
+            [int]$Depth,
+            [int]$MaxDepth,
+            [bool]$ShowHidden,
+            [System.ConsoleColor]$DirColor,
+            [System.ConsoleColor]$FileColor,
+            [System.ConsoleColor]$HiddenColor,
+            [bool]$UseIcons
+        )
+
+        if ($Depth -ge $MaxDepth) { return }
+
+        $items = Get-ChildItem -LiteralPath $Path -Force:$ShowHidden |
+                 Sort-Object { -not $_.PSIsContainer }, Name
+
+        $count = $items.Count
+        for ($i = 0; $i -lt $count; $i++) {
+            $item   = $items[$i]
+            $isLast = ($i -eq $count - 1)
+
+            $connector   = if ($isLast) { "└── " } else { "├── " }
+            $childPrefix = if ($isLast) { "$Prefix    " } else { "$Prefix│   " }
+
+            if ($item.Attributes -band [IO.FileAttributes]::Hidden) {
+                $color = $HiddenColor
+            }
+            elseif ($item.PSIsContainer) {
+                $color = $DirColor
+            }
+            else {
+                $color = $FileColor
+            }
+
+            $icon = Get-ItemIcon -Item $item -UseIcons:$UseIcons
+            $text = if ($UseIcons -and $icon) { "$icon $($item.Name)" } else { $item.Name }
+
+            Write-Host ($Prefix + $connector + $text) -ForegroundColor $color
+
+            if ($item.PSIsContainer) {
+                Show-TreeInternal -Path $item.FullName -Prefix $childPrefix -Depth ($Depth + 1) -MaxDepth $MaxDepth -ShowHidden:$ShowHidden -DirColor $DirColor -FileColor $FileColor -HiddenColor $HiddenColor -UseIcons:$UseIcons
+            }
+        }
+    }
+
+    function Show-Tree {
+        param(
+            [string]$RootPath,
+            [bool]$ShowHidden,
+            [int]$MaxDepth,
+            [System.ConsoleColor]$DirColor,
+            [System.ConsoleColor]$FileColor,
+            [System.ConsoleColor]$HiddenColor,
+            [bool]$UseIcons
+        )
+
+        $root = Get-Item -LiteralPath $RootPath
+
+        $icon = Get-ItemIcon -Item $root -UseIcons:$UseIcons
+        $rootText = if ($UseIcons -and $icon) { "$icon $($root.FullName)" } else { $root.FullName }
+
+        Write-Host $rootText -ForegroundColor Yellow
+        Show-TreeInternal -Path $root.FullName -Prefix "" -Depth 0 -MaxDepth $MaxDepth -ShowHidden:$ShowHidden -DirColor $DirColor -FileColor $FileColor -HiddenColor $HiddenColor -UseIcons:$UseIcons
+    }
+
+    function Get-LaLocalVersion {
+        try {
+            # Попробуем взять версию модуля, если есть манифест
+            $module = $MyInvocation.MyCommand.Module
+            if ($module -and $module.Version) {
+                return $module.Version.ToString()
+            }
+        } catch {}
+
+        try {
+            # Попробуем вычитать из lals.nuspec рядом с модулем
+            if ($PSCommandPath) {
+                $modulePath = Split-Path -Parent $PSCommandPath
+                $nuspec = Join-Path $modulePath 'lals.nuspec'
+                if (Test-Path $nuspec) {
+                    $xml = [xml](Get-Content $nuspec -Raw)
+                    $ver = $xml.package.metadata.version
+                    if ($ver) { return $ver }
+                }
+            }
+        } catch {}
+
+        return '0.0.0'
+    }
+
+    function Get-LaChocoVersion {
+        param([string]$PackageId = 'lals')
+
+        $choco = Get-Command choco -ErrorAction SilentlyContinue
+        if (-not $choco) {
+            return $null
+        }
+
+        try {
+            $output = choco list $PackageId --exact --limit-output 2>$null
+            if (-not $output) { return $null }
+            $line = $output | Select-Object -First 1
+            if (-not $line) { return $null }
+
+            $parts = $line -split '\|'
+            if ($parts.Count -ge 2) {
+                return $parts[1]
+            }
+        } catch {
+            return $null
+        }
+
+        return $null
+    }
+
+    function Show-LaVersion {
+        param([string]$Lang)
+
+        $localVer = Get-LaLocalVersion
+        $chocoVer = Get-LaChocoVersion
+
+        switch ($Lang) {
+
+            'ru' {
+                Write-Host "Версия LaLs / la" -ForegroundColor Yellow
+                Write-Host ("  Локальная версия : {0}" -f $localVer) -ForegroundColor Green
+
+                if ($null -eq $chocoVer) {
+                    Write-Host "  Chocolatey       : недоступно (choco не установлен или нет доступа к сети)" -ForegroundColor DarkYellow
+                    return
+                }
+
+                Write-Host ("  Chocolatey       : {0}" -f $chocoVer) -ForegroundColor Cyan
+
+                try {
+                    $lv = [version]$localVer
+                    $cv = [version]$chocoVer
+                } catch {
+                    $lv = $null
+                    $cv = $null
+                }
+
+                if ($lv -and $cv) {
+                    if ($cv -gt $lv) {
+                        Write-Host "  Доступна более новая версия на Chocolatey." -ForegroundColor Yellow
+                    }
+                    elseif ($cv -lt $lv) {
+                        Write-Host "  Локальная версия новее, чем в Chocolatey (dev / pre-release)." -ForegroundColor DarkGreen
+                    }
+                    else {
+                        Write-Host "  Установлена последняя доступная версия." -ForegroundColor Green
+                    }
+                }
+            }
+
+            'de' {
+                Write-Host "Version von LaLs / la" -ForegroundColor Yellow
+                Write-Host ("  Lokale Version : {0}" -f $localVer) -ForegroundColor Green
+
+                if ($null -eq $chocoVer) {
+                    Write-Host "  Chocolatey     : nicht verfügbar (choco nicht installiert oder kein Netzwerk)" -ForegroundColor DarkYellow
+                    return
+                }
+
+                Write-Host ("  Chocolatey     : {0}" -f $chocoVer) -ForegroundColor Cyan
+
+                try {
+                    $lv = [version]$localVer
+                    $cv = [version]$chocoVer
+                } catch {
+                    $lv = $null
+                    $cv = $null
+                }
+
+                if ($lv -and $cv) {
+                    if ($cv -gt $lv) {
+                        Write-Host "  Eine neuere Version ist auf Chocolatey verfügbar." -ForegroundColor Yellow
+                    }
+                    elseif ($cv -lt $lv) {
+                        Write-Host "  Die lokale Version ist neuer als auf Chocolatey (dev / pre-release)." -ForegroundColor DarkGreen
+                    }
+                    else {
+                        Write-Host "  Sie verwenden die neueste verfügbare Version." -ForegroundColor Green
+                    }
+                }
+            }
+
+            default { # en
+                Write-Host "LaLs / la version info" -ForegroundColor Yellow
+                Write-Host ("  Local version : {0}" -f $localVer) -ForegroundColor Green
+
+                if ($null -eq $chocoVer) {
+                    Write-Host "  Chocolatey    : unavailable (choco not installed or no network)" -ForegroundColor DarkYellow
+                    return
+                }
+
+                Write-Host ("  Chocolatey    : {0}" -f $chocoVer) -ForegroundColor Cyan
+
+                try {
+                    $lv = [version]$localVer
+                    $cv = [version]$chocoVer
+                } catch {
+                    $lv = $null
+                    $cv = $null
+                }
+
+                if ($lv -and $cv) {
+                    if ($cv -gt $lv) {
+                        Write-Host "  A newer version is available on Chocolatey." -ForegroundColor Yellow
+                    }
+                    elseif ($cv -lt $lv) {
+                        Write-Host "  Local version is newer than Chocolatey (dev / pre-release)." -ForegroundColor DarkGreen
+                    }
+                    else {
+                        Write-Host "  You are on the latest available version." -ForegroundColor Green
+                    }
+                }
+            }
+        }
+    }
+
+
+    # ==========================
+    # НАСТРОЙКА ИКОНОК
+    # ==========================
+
+    $useIconsEffective = Get-LaIconsConfig
+    if ($PSBoundParameters.ContainsKey('UseIconsPreference')) {
+        $val = $UseIconsPreference
+        if ($null -eq $val) {
+            $val = ""
+        }
+        $val = $val.ToLowerInvariant()
+
+        $bool =
+            if ($val -in @('1','true','yes','on')) { $true }
+            elseif ($val -in @('0','false','no','off')) { $false }
+            else { $null }
+
+        if ($null -eq $bool) {
+            Write-Host "Invalid value for -UseIconsPreference. Use: true/false/1/0/on/off." -ForegroundColor Red
+            return
+        }
+
+        Set-LaIconsConfig -Value $bool
+        $useIconsEffective = $bool
+    }
+
+
+    if ($Icons) {
+        $useIconsEffective = $true
+    }
+
+    # ==========================
+    # ОСНОВНАЯ ЛОГИКА
+    # ==========================
+
+    # Git режим
     if ($git) {
         if (-not (Test-Path ".git")) {
             Write-Host "This directory is not a Git repository." -ForegroundColor Red
@@ -20,55 +667,49 @@ function la {
         $gitStatus = git status --porcelain
 
         foreach ($line in $gitStatus) {
+            if (-not $line) { continue }
+
             $statusCode = $line.Substring(0, 2).Trim()
-            $fileName = $line.Substring(3)
+            $fileName   = $line.Substring(3)
 
             switch ($statusCode) {
-                "M" { Write-Host $fileName -ForegroundColor Cyan }    
-                "A" { Write-Host $fileName -ForegroundColor Green }   
-                "D" { Write-Host $fileName -ForegroundColor Red }     
-                "??" { Write-Host $fileName -ForegroundColor Yellow } 
-                default { Write-Host $fileName -ForegroundColor White } 
+                "M"  { Write-Host $fileName -ForegroundColor Cyan }    # modified
+                "A"  { Write-Host $fileName -ForegroundColor Green }   # added
+                "D"  { Write-Host $fileName -ForegroundColor Red }     # deleted
+                "??" { Write-Host $fileName -ForegroundColor Yellow }  # untracked
+                default { Write-Host $fileName -ForegroundColor White }
             }
         }
 
         return
     }
 
-    if ($structure) {
-        if (-not (Test-Path $PROFILE)) {
-            Write-Error "Profile not found: $PROFILE"
-            return
-        }
+    # Дерево (-tree / -structure)
+    if ($tree) {
+        $dirColor    = [System.ConsoleColor]::DarkYellow
+        $fileColor   = [System.ConsoleColor]::Cyan
+        $hiddenColor = [System.ConsoleColor]::DarkGray
 
-        $profileDir = Split-Path $PROFILE
-
-        if (-not $profileDir) {
-            Write-Error "Profile directory is not available."
-            return
-        }
-
-	$pythonScript = Join-Path $profileDir "Scripts\print_directory_structure.py"
-
-        $projectPath = Get-Location
-
-        python $pythonScript $projectPath
-
+        $rootPath = (Get-Location).Path
+        Show-Tree -RootPath $rootPath -ShowHidden:([bool]$a) -MaxDepth 10 -DirColor $dirColor -FileColor $fileColor -HiddenColor $hiddenColor -UseIcons:$useIconsEffective
         return
     }
 
+    # Справка
     if ($info) {
-        Write-Host "Arguments information for 'la' function:" -ForegroundColor Yellow
-        Write-Host "-a     : Shows all files, including hidden ones." -ForegroundColor Green
-        Write-Host "-l     : Lists all files and directories in a column view." -ForegroundColor Green
-        Write-Host "-i     : Displays file/directory name, creation date, and size, aligned in columns." -ForegroundColor Green
-        Write-Host "-d     : Shows only directories." -ForegroundColor Green
-        Write-Host "-f     : Shows only files." -ForegroundColor Green
-        Write-Host "-m     : Lists files with their access modes (read, write, execute)." -ForegroundColor Green
-        Write-Host "-info  : Displays information about available arguments." -ForegroundColor Green
+        $lang = Get-LaLang
+        Show-Help -Lang $lang
         return
     }
 
+    # Версия
+    if ($Version) {
+        $lang = Get-LaLang
+        Show-LaVersion -Lang $lang
+        return
+    }
+
+    # Базовый список
     $items = Get-ChildItem -Force:$a
 
     if ($d) {
@@ -78,79 +719,56 @@ function la {
         $items = $items | Where-Object { -not $_.PSIsContainer }
     }
 
-    $dirColor = [ConsoleColor]::DarkYellow
-    $fileColor = [ConsoleColor]::Cyan
-    $hiddenColor = [ConsoleColor]::DarkGray
-
-    if ($m) {
-        $nameWidth = 40
-        $modeWidth = 15
-
-        Write-Host ("Name".PadRight($nameWidth) + "Mode".PadRight($modeWidth)) -ForegroundColor White
-        Write-Host ("-" * ($nameWidth + $modeWidth)) -ForegroundColor White
-
-        foreach ($item in $items) {
-            $color = if ($item.Attributes -match "Hidden") { $hiddenColor }
-                     elseif ($item.PSIsContainer) { $dirColor }
-                     else { $fileColor }
-
-            $name = $item.Name.PadRight($nameWidth)
-
-            $mode = ""
-            if ($item.Attributes -match "ReadOnly") { $mode += "Read-Only" }
-            else { $mode += "Read/Write" }
-
-            if ($item.Attributes -match "Directory") { $mode += ", Directory" }
-            if ($item.Attributes -match "Archive") { $mode += ", Archive" }
-            if ($item.Attributes -match "System") { $mode += ", System" }
-            if ($item.Attributes -match "Hidden") { $mode += ", Hidden" }
-
-            Write-Host ("$name$mode") -ForegroundColor $color
+    # Сортировки
+    switch ($Sort) {
+        'name' {
+            $items = $items | Sort-Object Name
+        }
+        'size' {
+            $items = $items | Sort-Object { if ($_.PSIsContainer) { 0 } else { $_.Length } }
+        }
+        'time' {
+            $items = $items | Sort-Object LastWriteTime
+        }
+        'extension' {
+            $items = $items | Sort-Object Extension, Name
+        }
+        'length' {
+            $items = $items | Sort-Object { $_.Name.Length }
         }
     }
+
+    if ($Reverse) {
+        $items = [System.Collections.ArrayList]::new($items)
+        [void]$items.Reverse()
+    }
+
+    $dirColor    = [System.ConsoleColor]::DarkYellow
+    $fileColor   = [System.ConsoleColor]::Cyan
+    $hiddenColor = [System.ConsoleColor]::DarkGray
+
+    if ($m) {
+        Show-Modes -Items $items -DirColor $dirColor -FileColor $fileColor -HiddenColor $hiddenColor -UseIcons:$useIconsEffective
+    }
     elseif ($i) {
-        $nameWidth = 40
-        $dateWidth = 20
-        $sizeWidth = 10
-
-        Write-Host ("Name".PadRight($nameWidth) + "Creation Date".PadRight($dateWidth) + "Size (KB)".PadRight($sizeWidth)) -ForegroundColor White
-        Write-Host ("-" * ($nameWidth + $dateWidth + $sizeWidth)) -ForegroundColor White
-
-        foreach ($item in $items) {
-            $color = if ($item.Attributes -match "Hidden") { $hiddenColor }
-                     elseif ($item.PSIsContainer) { $dirColor }
-                     else { $fileColor }
-
-            $name = $item.Name.PadRight($nameWidth)
-            $creationDate = $item.CreationTime.ToString("yyyy-MM-dd HH:mm").PadRight($dateWidth)
-            $size = if ($item.PSIsContainer) { "-" } else { '{0:N2}' -f ($item.Length / 1KB) }
-            $size = $size.PadLeft($sizeWidth)
-
-            Write-Host ("$name$creationDate$size") -ForegroundColor $color
-        }
+        Show-InfoTable -Items $items -DirColor $dirColor -FileColor $fileColor -HiddenColor $hiddenColor -UseIcons:$useIconsEffective
     }
     else {
         foreach ($item in $items) {
-            if ($item.Attributes -match "Hidden") {
-                $color = $hiddenColor
-            }
-            elseif ($item.PSIsContainer) {
-                $color = $dirColor
-            }
-            else {
-                $color = $fileColor
-            }
-
-            if ($l) {
-                Write-Host $item.Name -ForegroundColor $color
-            }
-            else {
-                Write-Host -NoNewline "$($item.Name)   " -ForegroundColor $color
-            }
+            Write-ItemName -Item $item -DirColor $dirColor -FileColor $fileColor -HiddenColor $hiddenColor -UseIcons:$useIconsEffective -Long:$l
         }
 
         if (-not $l) {
             Write-Host
         }
     }
+}
+
+
+function LaLs {
+    Write-Host "[WARN] The executable command is 'la', not 'LaLs'." -ForegroundColor Yellow
+    Write-Host "       The module name is 'LaLs', but the command you run is 'la'." -ForegroundColor DarkYellow
+    Write-Host ""
+    Write-Host "       Try:" -ForegroundColor Yellow
+    Write-Host "         la" -ForegroundColor White
 }

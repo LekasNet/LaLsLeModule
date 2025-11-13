@@ -1,4 +1,4 @@
-﻿function lz {
+﻿function la {
     [CmdletBinding()]
     param (
         # Базовые флаги
@@ -9,6 +9,8 @@
         [switch]$f,          # only files
         [switch]$m,          # modes (attributes)
         [switch]$info,       # help
+        [Alias('v')]
+        [switch]$Version,    # version info
         [Alias('structure')]
         [switch]$tree,       # tree view
         [switch]$git,        # git status
@@ -74,6 +76,7 @@
                 Write-Host "  -d           Только директории." -ForegroundColor Green
                 Write-Host "  -f           Только файлы." -ForegroundColor Green
                 Write-Host "  -m           Таблица атрибутов (ReadOnly, Hidden, System, Archive)." -ForegroundColor Green
+                Write-Host "  -Version,-v  Показать локальную версию и версию пакета на Chocolatey." -ForegroundColor Green
                 Write-Host ""
 
                 Write-Host "Расширенный функционал:" -ForegroundColor Cyan
@@ -104,8 +107,8 @@
                 Write-Host "  la -tree                    # дерево текущей папки" -ForegroundColor White
                 Write-Host "  la -git                     # git статус" -ForegroundColor White
                 Write-Host "  la -Icons                   # добавить иконки только сейчас" -ForegroundColor White
-                Write-Host "  la -UseIconsPreference true # включить иконки навсегда" -ForegroundColor White
-                Write-Host "  la -UseIconsPreference false# отключить иконки навсегда" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference true   # включить иконки навсегда" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference false  # отключить иконки навсегда" -ForegroundColor White
             }
 
             'en' {
@@ -119,6 +122,7 @@
                 Write-Host "  -d           Directories only." -ForegroundColor Green
                 Write-Host "  -f           Files only." -ForegroundColor Green
                 Write-Host "  -m           Attribute table (ReadOnly, Hidden, System, Archive)." -ForegroundColor Green
+                Write-Host "  -Version,-v  Show local version of LaLs and package current version in choco" -ForegroundColor Green
                 Write-Host ""
 
                 Write-Host "Extended features:" -ForegroundColor Cyan
@@ -149,8 +153,8 @@
                 Write-Host "  la -tree                    # tree of current directory" -ForegroundColor White
                 Write-Host "  la -git                     # git status" -ForegroundColor White
                 Write-Host "  la -Icons                   # enable icons for this run" -ForegroundColor White
-                Write-Host "  la -UseIconsPreference true # turn icons on permanently" -ForegroundColor White
-                Write-Host "  la -UseIconsPreference false# turn icons off permanently" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference true   # turn icons on permanently" -ForegroundColor White
+                Write-Host "  la -UseIconsPreference false  # turn icons off permanently" -ForegroundColor White
             }
 
             'de' {
@@ -164,6 +168,7 @@
                 Write-Host "  -d           Nur Verzeichnisse." -ForegroundColor Green
                 Write-Host "  -f           Nur Dateien." -ForegroundColor Green
                 Write-Host "  -m           Attribut-Tabelle (ReadOnly, Hidden, System, Archive)." -ForegroundColor Green
+                Write-Host "  -Version,-v  Zeigt die lokale Version und die Paketversion auf Chocolatey an." -ForegroundColor Green
                 Write-Host ""
 
                 Write-Host "Erweiterte Funktionen:" -ForegroundColor Cyan
@@ -460,6 +465,163 @@
         Show-TreeInternal -Path $root.FullName -Prefix "" -Depth 0 -MaxDepth $MaxDepth -ShowHidden:$ShowHidden -DirColor $DirColor -FileColor $FileColor -HiddenColor $HiddenColor -UseIcons:$UseIcons
     }
 
+    function Get-LaLocalVersion {
+        try {
+            # Попробуем взять версию модуля, если есть манифест
+            $module = $MyInvocation.MyCommand.Module
+            if ($module -and $module.Version) {
+                return $module.Version.ToString()
+            }
+        } catch {}
+
+        try {
+            # Попробуем вычитать из lals.nuspec рядом с модулем
+            if ($PSCommandPath) {
+                $modulePath = Split-Path -Parent $PSCommandPath
+                $nuspec = Join-Path $modulePath 'lals.nuspec'
+                if (Test-Path $nuspec) {
+                    $xml = [xml](Get-Content $nuspec -Raw)
+                    $ver = $xml.package.metadata.version
+                    if ($ver) { return $ver }
+                }
+            }
+        } catch {}
+
+        return '0.0.0'
+    }
+
+    function Get-LaChocoVersion {
+        param([string]$PackageId = 'lals')
+
+        $choco = Get-Command choco -ErrorAction SilentlyContinue
+        if (-not $choco) {
+            return $null
+        }
+
+        try {
+            $output = choco list $PackageId --exact --limit-output 2>$null
+            if (-not $output) { return $null }
+            $line = $output | Select-Object -First 1
+            if (-not $line) { return $null }
+
+            $parts = $line -split '\|'
+            if ($parts.Count -ge 2) {
+                return $parts[1]
+            }
+        } catch {
+            return $null
+        }
+
+        return $null
+    }
+
+    function Show-LaVersion {
+        param([string]$Lang)
+
+        $localVer = Get-LaLocalVersion
+        $chocoVer = Get-LaChocoVersion
+
+        switch ($Lang) {
+
+            'ru' {
+                Write-Host "Версия LaLs / la" -ForegroundColor Yellow
+                Write-Host ("  Локальная версия : {0}" -f $localVer) -ForegroundColor Green
+
+                if ($null -eq $chocoVer) {
+                    Write-Host "  Chocolatey       : недоступно (choco не установлен или нет доступа к сети)" -ForegroundColor DarkYellow
+                    return
+                }
+
+                Write-Host ("  Chocolatey       : {0}" -f $chocoVer) -ForegroundColor Cyan
+
+                try {
+                    $lv = [version]$localVer
+                    $cv = [version]$chocoVer
+                } catch {
+                    $lv = $null
+                    $cv = $null
+                }
+
+                if ($lv -and $cv) {
+                    if ($cv -gt $lv) {
+                        Write-Host "  Доступна более новая версия на Chocolatey." -ForegroundColor Yellow
+                    }
+                    elseif ($cv -lt $lv) {
+                        Write-Host "  Локальная версия новее, чем в Chocolatey (dev / pre-release)." -ForegroundColor DarkGreen
+                    }
+                    else {
+                        Write-Host "  Установлена последняя доступная версия." -ForegroundColor Green
+                    }
+                }
+            }
+
+            'de' {
+                Write-Host "Version von LaLs / la" -ForegroundColor Yellow
+                Write-Host ("  Lokale Version : {0}" -f $localVer) -ForegroundColor Green
+
+                if ($null -eq $chocoVer) {
+                    Write-Host "  Chocolatey     : nicht verfügbar (choco nicht installiert oder kein Netzwerk)" -ForegroundColor DarkYellow
+                    return
+                }
+
+                Write-Host ("  Chocolatey     : {0}" -f $chocoVer) -ForegroundColor Cyan
+
+                try {
+                    $lv = [version]$localVer
+                    $cv = [version]$chocoVer
+                } catch {
+                    $lv = $null
+                    $cv = $null
+                }
+
+                if ($lv -and $cv) {
+                    if ($cv -gt $lv) {
+                        Write-Host "  Eine neuere Version ist auf Chocolatey verfügbar." -ForegroundColor Yellow
+                    }
+                    elseif ($cv -lt $lv) {
+                        Write-Host "  Die lokale Version ist neuer als auf Chocolatey (dev / pre-release)." -ForegroundColor DarkGreen
+                    }
+                    else {
+                        Write-Host "  Sie verwenden die neueste verfügbare Version." -ForegroundColor Green
+                    }
+                }
+            }
+
+            default { # en
+                Write-Host "LaLs / la version info" -ForegroundColor Yellow
+                Write-Host ("  Local version : {0}" -f $localVer) -ForegroundColor Green
+
+                if ($null -eq $chocoVer) {
+                    Write-Host "  Chocolatey    : unavailable (choco not installed or no network)" -ForegroundColor DarkYellow
+                    return
+                }
+
+                Write-Host ("  Chocolatey    : {0}" -f $chocoVer) -ForegroundColor Cyan
+
+                try {
+                    $lv = [version]$localVer
+                    $cv = [version]$chocoVer
+                } catch {
+                    $lv = $null
+                    $cv = $null
+                }
+
+                if ($lv -and $cv) {
+                    if ($cv -gt $lv) {
+                        Write-Host "  A newer version is available on Chocolatey." -ForegroundColor Yellow
+                    }
+                    elseif ($cv -lt $lv) {
+                        Write-Host "  Local version is newer than Chocolatey (dev / pre-release)." -ForegroundColor DarkGreen
+                    }
+                    else {
+                        Write-Host "  You are on the latest available version." -ForegroundColor Green
+                    }
+                }
+            }
+        }
+    }
+
+
     # ==========================
     # НАСТРОЙКА ИКОНОК
     # ==========================
@@ -540,6 +702,13 @@
         return
     }
 
+    # Версия
+    if ($Version) {
+        $lang = Get-LaLang
+        Show-LaVersion -Lang $lang
+        return
+    }
+
     # Базовый список
     $items = Get-ChildItem -Force:$a
 
@@ -593,4 +762,13 @@
             Write-Host
         }
     }
+}
+
+
+function LaLs {
+    Write-Host "[WARN] The executable command is 'la', not 'LaLs'." -ForegroundColor Yellow
+    Write-Host "       The module name is 'LaLs', but the command you run is 'la'." -ForegroundColor DarkYellow
+    Write-Host ""
+    Write-Host "       Try:" -ForegroundColor Yellow
+    Write-Host "         la" -ForegroundColor White
 }

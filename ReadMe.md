@@ -1,4 +1,217 @@
-﻿## Summary
+﻿# LaLs (command `la` for PowerShell)
+
+LaLs is a PowerShell module that provides an `la` command — colorful, ls-like directory listing with:
+
+- icons (configurable, with registry persistence),
+- tree view (`la -tree`),
+- sorting (`-Sort name|size|time|extension|length`, `-Reverse`),
+- git status (`la -git`),
+- multilingual help (ru/en/de),
+- Chocolatey version check (`la -Version`).
+
+---
+
+# 📘 Commands overview — LaLs / `la`
+
+## 🔹 Basic usage
+
+```
+la
+```
+
+Colored directory listing, classic compact style (names separated by spaces, like old Unix `ls`).
+
+```
+la -l
+```
+
+Long list — one item per line.
+
+```
+la -a
+```
+
+Show hidden files and directories.
+
+```
+la -d
+```
+
+Directories only.
+
+```
+la -f
+```
+
+Files only.
+
+```
+la -i
+```
+
+Table view: name, modified date, size (human-readable).
+
+```
+la -m
+```
+
+Attribute table (`ReadOnly`, `Hidden`, `System`, `Archive`).
+
+---
+
+## 🔹 Tree view
+
+```
+la -tree
+```
+
+Unicode directory tree (`├──`, `└──`) with colors and icons.
+Alias: `-structure`
+
+---
+
+## 🔹 Sorting
+
+```
+la -Sort name
+la -Sort size
+la -Sort time
+la -Sort extension
+la -Sort length
+```
+
+Reverse sorting:
+
+```
+la -Reverse
+```
+
+Combined:
+
+```
+la -f -Sort size -Reverse
+```
+
+---
+
+## 🔹 Git status
+
+```
+la -git
+```
+
+Shows `git status --porcelain` in a compact, colorized form.
+
+* Modified → cyan
+* Added → green
+* Deleted → red
+* Untracked → yellow
+
+If Git is not installed → shows a warning.
+
+---
+
+## 🔹 Icons
+
+### Enable icons for **this call only**
+
+```
+la -Icons
+```
+
+### Enable icons **permanently**
+
+```
+la -UseIconsPreference true
+```
+
+### Disable icons **permanently**
+
+```
+la -UseIconsPreference false
+```
+
+The setting is stored in:
+
+```
+HKCU:\Software\LaLs\UseIcons
+```
+
+---
+
+## 🔹 Info / Help
+
+```
+la -info
+```
+
+Shows a fully colorized multilingual help screen (RU/EN/DE).
+Language is auto-detected from:
+
+* `PSUICulture`
+* `PSCulture`
+* `Get-UICulture`
+* `Get-Culture`
+* environment vars: `LANG`, `LC_ALL`
+
+---
+
+## 🔹 Version & Chocolatey check
+
+```
+la -Version
+la -v
+```
+
+Shows:
+
+* local module version
+* latest version available on Chocolatey
+* whether an update is available
+
+Example output:
+
+```
+Local version : 1.2.0
+Chocolatey    : 1.2.0
+You are on the latest available version.
+```
+
+---
+
+## 🔹 Safety / Compatibility command
+
+```
+LaLs
+```
+
+Shows a warning:
+
+```
+[WARN] The executable command is 'la', not 'LaLs'.
+```
+
+Useful if user tries to run the module name instead of the command.
+
+---
+
+## 🔹 Examples
+
+```
+la -a
+la -l
+la -i
+la -tree
+la -f -Sort size -Reverse
+la -Icons
+la -UseIconsPreference true
+la -Version
+```
+---
+
+# Stock choco info:
+
+## Summary
 How do I create packages? See https://docs.chocolatey.org/en-us/create/create-packages
 
 If you are submitting packages to the community feed (https://community.chocolatey.org)
